@@ -1,12 +1,20 @@
-name: Django CI
+name: Django CI/CD
 
 on:
   push:
-    branches: [ "main" ]
+    branches: ["main"]
   pull_request:
-    branches: [ "main" ]
+    branches: ["main"]
+
+permissions:
+  contents: read
+  packages: write
+  id-token: write
 
 jobs:
+  # -----------------------------
+  # 1. Continuous Integration
+  # -----------------------------
   test:
     runs-on: ubuntu-latest
 
@@ -17,12 +25,12 @@ jobs:
           POSTGRES_DB: testdb
           POSTGRES_USER: django
           POSTGRES_PASSWORD: django
+        ports:
+          - 5432:5432
         options: >-
           --health-cmd pg_isready
           --health-interval 5s
           --health-retries 5
-        ports:
-          - 5432:5432
 
     env:
       DATABASE_URL: postgres://django:django@localhost:5432/testdb
@@ -40,7 +48,7 @@ jobs:
           python -m pip install --upgrade pip
           pip install -r requirements.txt
 
-      - name: Run Django checks
+      - name: Django system checks
         run: python manage.py check --deploy
 
       - name: Run migrations
@@ -48,3 +56,42 @@ jobs:
 
       - name: Run tests
         run: pytest -q
+
+  # -----------------------------
+  # 2. Build & Push Docker Image
+  # -----------------------------
+  build:
+    needs: test
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to container registry
+        run: |
+          echo "${{ secrets.REGISTRY_TOKEN }}" | \
+          docker login ${{ secrets.REGISTRY_URL }} \
+          -u ${{ secrets.REGISTRY_USER }} --password-stdin
+
+      - name: Build Docker image
+        run: docker build -t myapp:latest .
+
+      - name: Tag image
+        run: docker tag myapp:latest ${{ secrets.REGISTRY_URL }}/myapp:latest
+
+      - name: Push image
+        run: docker push ${{ secrets.REGISTRY_URL }}/myapp:latest
+
+  # -----------------------------
+  # 3. Trigger Deployment
+  # -----------------------------
+  deploy:
+    needs: build
+    runs-on: ubuntu-latest
+    if: github.ref == 'refs/heads/main'
+
+    steps:
+      - name: Trigger Render/Railway/Fly.io deploy hook
+        run: |
+          curl -X POST ${{ secrets.DEPLOY_HOOK_URL }}
