@@ -1,3 +1,6 @@
-Django==6.0.4
-uvicorn[standard]==0.46.0
-pytest
+Django
+gunicorn
+whitenoise
+psycopg2-binary
+dj-database-url
+python-dotenv
